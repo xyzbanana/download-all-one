@@ -271,6 +271,52 @@ svg { width: 1.15em; height: 1.15em; flex-shrink: 0; }
   color: var(--text-muted);
 }
 
+/* ---------------- 支持平台栏 ---------------- */
+.platform-bar {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.platform-bar-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.platform-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: var(--transition);
+  cursor: default;
+}
+
+.platform-chip:hover {
+  transform: scale(1.05);
+  color: var(--text-primary);
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.25);
+}
+
+.platform-chip svg { width: 1.05em; height: 1.05em; }
+
+.platform-chip--douyin svg { color: #25f4ee; filter: drop-shadow(1px 1px 0 #fe2c55); }
+.platform-chip--tiktok svg { color: #fe2c55; filter: drop-shadow(-1px -1px 0 #25f4ee); }
+.platform-chip--x svg { color: #ffffff; }
+.platform-chip--soon { opacity: 0.5; }
+.platform-chip--soon svg { color: #ff0000; }
+
 /* ---------------- 按钮体系 ---------------- */
 .btn {
   display: inline-flex;
@@ -461,6 +507,12 @@ svg { width: 1.15em; height: 1.15em; flex-shrink: 0; }
   background: rgba(59, 130, 246, 0.16);
   border-color: rgba(59, 130, 246, 0.45);
   color: #93c5fd;
+}
+
+.platform-badge--twitter {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #e2e8f0;
 }
 
 .video-desc {

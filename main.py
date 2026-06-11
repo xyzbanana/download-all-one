@@ -19,6 +19,7 @@
 import asyncio
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -82,6 +83,11 @@ TIKTOK_CDN_HEADERS = {
     "Referer": "https://www.tiktok.com/",
     "Accept": "*/*",
 }
+# X(Twitter) 的 video.twimg.com / pbs.twimg.com 无防盗链, 仅需正常 UA
+TWITTER_CDN_HEADERS = {
+    "User-Agent": DESKTOP_UA,
+    "Accept": "*/*",
+}
 
 URL_REGEX = re.compile(r"https?://[\w\-._~:/?#\[\]@!$&'()*+,;=%]+", re.I)
 
@@ -113,7 +119,11 @@ def detect_platform(url: str) -> str:
         return "douyin"
     if "tiktok" in host:
         return "tiktok"
-    raise HTTPException(status_code=400, detail="仅支持抖音 (Douyin) 与 TikTok 链接")
+    if host in ("t.co",) or host.endswith(("x.com", "twitter.com")):
+        return "twitter"
+    raise HTTPException(
+        status_code=400, detail="仅支持抖音 (Douyin)、TikTok 与 X (Twitter) 链接"
+    )
 
 
 async def resolve_url(client: httpx.AsyncClient, url: str) -> str:
@@ -352,11 +362,132 @@ async def parse_tiktok(share_url: str) -> dict:
     }
 
 
+# ----------------------------------------------------------------------------
+# X (Twitter) 解析
+# ----------------------------------------------------------------------------
+_BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+
+def _tweet_token(tweet_id: str) -> str:
+    """复刻官方嵌入页的 token 算法: ((id / 1e15) * PI) 的 36 进制表示去掉 0 和小数点"""
+    value = (int(tweet_id) / 1e15) * math.pi
+    integer, frac = int(value), value - int(value)
+    digits = []
+    while integer:
+        digits.append(_BASE36[integer % 36])
+        integer //= 36
+    out = "".join(reversed(digits)) + "."
+    for _ in range(8):
+        frac *= 36
+        d = int(frac)
+        out += _BASE36[d]
+        frac -= d
+    return re.sub(r"(0+|\.)", "", out)
+
+
+async def parse_twitter(share_url: str) -> dict:
+    headers = {"User-Agent": DESKTOP_UA, "Accept": "application/json"}
+
+    async with new_client(headers) as client:
+        final_url = share_url
+        if urllib.parse.urlparse(share_url).netloc.lower() == "t.co":
+            final_url = await resolve_url(client, share_url)
+
+        m = re.search(r"/status(?:es)?/(\d{8,25})", final_url)
+        if not m:
+            raise HTTPException(status_code=400, detail="无法从链接中提取推文 ID")
+        tweet_id = m.group(1)
+
+        resp = await client.get(
+            "https://cdn.syndication.twimg.com/tweet-result",
+            params={"id": tweet_id, "token": _tweet_token(tweet_id), "lang": "en"},
+        )
+        if resp.status_code == 404:
+            raise HTTPException(
+                status_code=404, detail="推文不存在、已删除或为受保护/受限内容"
+            )
+        if resp.status_code >= 400:
+            raise HTTPException(
+                status_code=502, detail=f"X 接口返回 {resp.status_code}, 请稍后重试"
+            )
+        data = resp.json()
+
+    if data.get("__typename") == "TweetTombstone":
+        raise HTTPException(status_code=404, detail="推文不可用(可能为受限或成人内容)")
+
+    user = data.get("user") or {}
+    avatar = (user.get("profile_image_url_https") or "").replace("_normal", "_200x200")
+
+    # 去掉正文末尾自动附加的 t.co 媒体短链
+    desc = re.sub(r"\s*https://t\.co/\w+\s*$", "", data.get("text") or "").strip()
+
+    # 媒体: video / animated_gif 取 MP4 变体按码率排序; photo 收集为图集
+    video_urls: list = []
+    images: list = []
+    cover = ""
+    duration = 0
+    for media in data.get("mediaDetails") or []:
+        mtype = media.get("type")
+        if mtype in ("video", "animated_gif") and not video_urls:
+            info = media.get("video_info") or {}
+            mp4s = sorted(
+                (v for v in info.get("variants") or []
+                 if v.get("content_type") == "video/mp4" and v.get("url")),
+                key=lambda v: v.get("bitrate") or 0,
+            )
+            video_urls = [v["url"] for v in mp4s]
+            cover = media.get("media_url_https") or cover
+            duration = info.get("duration_millis", 0)
+        elif mtype == "photo":
+            url = media.get("media_url_https")
+            if url:
+                images.append(f"{url}?name=orig")
+                cover = cover or url
+    if not images and not video_urls:
+        for photo in data.get("photos") or []:
+            if photo.get("url"):
+                images.append(f"{photo['url']}?name=orig")
+                cover = cover or photo["url"]
+
+    if not video_urls and not images:
+        raise HTTPException(status_code=404, detail="该推文不包含可下载的视频或图片")
+
+    return {
+        "code": 200,
+        "platform": "twitter",
+        "aweme_id": tweet_id,
+        "type": "video" if video_urls else "image",
+        "desc": desc,
+        "author": {
+            "nickname": user.get("name") or "",
+            "unique_id": user.get("screen_name") or "",
+            "avatar": avatar,
+        },
+        "statistics": {
+            "digg_count": data.get("favorite_count", 0),
+            "comment_count": data.get("conversation_count", 0),
+            "share_count": 0,  # syndication 接口不提供转推数
+        },
+        "cover": cover,
+        "video": {
+            # X 无水印之分: 最高码率作 HQ, 其余依码率降序回退
+            "nwm_video_url_HQ": video_urls[-1] if video_urls else None,
+            "nwm_video_url": video_urls[-2] if len(video_urls) > 1 else (video_urls[0] if video_urls else None),
+            "wm_video_url": video_urls[0] if video_urls else None,
+            "duration": duration,
+        },
+        "images": images,
+        "music": {"title": "", "author": "", "url": None},
+    }
+
+
 async def hybrid_parse(text: str) -> dict:
     url = extract_url(text)
     platform = detect_platform(url)
     if platform == "douyin":
         return await parse_douyin(url)
+    if platform == "twitter":
+        return await parse_twitter(url)
     return await parse_tiktok(url)
 
 
@@ -382,6 +513,8 @@ def pick_video_url(data: dict, watermark: bool = False) -> str:
 
 
 def cdn_headers_for(platform: str) -> dict:
+    if platform == "twitter":
+        return dict(TWITTER_CDN_HEADERS)
     headers = dict(DOUYIN_CDN_HEADERS if platform == "douyin" else TIKTOK_CDN_HEADERS)
     cookie = DOUYIN_COOKIE if platform == "douyin" else TIKTOK_COOKIE
     if cookie:

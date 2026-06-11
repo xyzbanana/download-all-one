@@ -301,11 +301,13 @@ function renderResult(data) {
   hide(els.errorBox);
 
   // 作者与平台
+  const PLATFORM_LABELS = { douyin: "Douyin", tiktok: "TikTok", twitter: "X / Twitter" };
   els.avatar.src = data.author?.avatar || "";
   els.nickname.textContent = data.author?.nickname || "未知创作者";
   els.uid.textContent = data.author?.unique_id ? "@" + data.author.unique_id : "";
-  els.badge.textContent = data.platform === "tiktok" ? "TikTok" : "Douyin";
-  els.badge.classList.toggle("platform-badge--tiktok", data.platform === "tiktok");
+  els.badge.textContent = PLATFORM_LABELS[data.platform] || data.platform;
+  els.badge.className = "platform-badge"
+    + (data.platform !== "douyin" ? ` platform-badge--${data.platform}` : "");
 
   // 描述与统计
   els.desc.textContent = data.desc || "（无描述）";
