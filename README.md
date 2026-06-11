@@ -39,12 +39,9 @@ douyin/
 
 ### 在线体验
 
-**开箱即用，无需任何配置：**
+🌐 **https://jfgatlas.github.io/AeroFetch/** —— 开箱即用，已内置公共解析后端，无需任何配置
 
-- 🌐 完整站点（前后端一体）：**https://aerofetch-api.onrender.com**
-- 🌐 GitHub Pages 入口：**https://jfgatlas.github.io/AeroFetch/**（自动调用上面的公共后端）
-
-> 公共后端部署在 Render 免费档：闲置 15 分钟后休眠，首次访问冷启动约 30~60 秒，之后恢复秒级响应。
+> 内置公共后端为免费托管：闲置 15 分钟后休眠，首次访问冷启动约 30~60 秒，之后恢复秒级响应。
 
 前端兼容两种自建后端（在右上角 ⚙ 设置中填入即可）：
 
