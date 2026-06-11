@@ -418,3 +418,8 @@ els.pasteBtn.addEventListener("click", async () => {
 
 // ---------------- 初始化 ----------------
 renderHistory();
+
+// GitHub Pages 等纯静态托管没有同源后端, 引导用户配置自己的 API 地址
+if (!localStorage.getItem(LS_API_BASE_KEY) && /\.github\.io$/i.test(location.hostname)) {
+  toast("当前为纯前端演示页，解析需自建后端：点击右上角 ⚙ 填写你的 API 地址", "info", 8000);
+}
