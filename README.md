@@ -30,14 +30,16 @@ douyin/
 
 ### 在线体验
 
-前端演示页：**https://jfgatlas.github.io/AeroFetch/**（需在右上角 ⚙ 设置中填写你的后端 API 地址）
+前端演示页：**https://jfgatlas.github.io/AeroFetch/** —— **开箱即用，无需任何配置**
 
-前端同时兼容两种后端，任选其一填入设置即可：
+演示页默认使用开源社区公共测试节点 `api.douyin.wtf` 解析（该节点未开放浏览器跨域，前端自动经公共 CORS 中继转发），下载走解析出的无水印 CDN 直链。
+
+> 公共节点模式的限制：受节点限流影响、解析请求会经过第三方中继、不支持图集打包 ZIP 与 ffmpeg 音频提取。在右上角 ⚙ 设置中填入自建后端地址即可解锁全部功能。
+
+前端兼容两种自建后端：
 
 1. **本项目后端**（推荐，功能最全：代理下载 / 图集 ZIP / ffmpeg 音频提取）
 2. **自建 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 节点**（`minimal` 模式，需开启 CORS 与下载端点）
-
-> 注：作者提供的公共节点 `api.douyin.wtf` 未开放浏览器跨域（CORS）且已禁用下载端点，仅可用于服务端调用，无法作为本前端的接口。
 
 ### 一键部署后端（免费）
 

@@ -10,6 +10,11 @@ const LS_API_BASE_KEY = "aerofetch_api_base";
 const HISTORY_LIMIT = 6;
 const URL_PATTERN = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/i;
 
+// 默认公共测试节点(Douyin_TikTok_Download_API 作者提供)。该节点未开放 CORS,
+// 浏览器直连会被拦截, 故经公共中继转发; 其下载端点已禁用, 下载一律走 CDN 直链。
+const PUBLIC_API = "https://api.douyin.wtf";
+const CORS_RELAY = "https://api.allorigins.win/raw?url=";
+
 const state = {
   data: null,      // 最近一次解析结果(已归一化)
   rawInput: "",    // 最近一次解析的原始输入
@@ -64,7 +69,13 @@ const els = {
 
 // ---------------- 工具函数 ----------------
 function apiBase() {
-  return (localStorage.getItem(LS_API_BASE_KEY) || "").replace(/\/+$/, "");
+  const saved = (localStorage.getItem(LS_API_BASE_KEY) || "").replace(/\/+$/, "");
+  if (saved) return saved;
+  // 本地/自部署(同源有后端)时请求当前站点; 纯静态托管(GitHub Pages 等)默认公共节点
+  if (/\.github\.io$/i.test(location.hostname) || location.protocol === "file:") {
+    return PUBLIC_API;
+  }
+  return "";
 }
 
 function apiUrl(path, params = {}) {
@@ -187,11 +198,12 @@ function normalizeResponse(body) {
   return null;
 }
 
-/** 按后端类型构造下载链接 */
+/** 按后端类型构造代理下载链接; 返回 null 表示该后端无可用下载端点(回退直链) */
 function downloadHref(media) {
   const shareUrl = extractUrl(state.rawInput) || state.rawInput;
   if (state.style === "wtf") {
-    // 该项目的下载端点不区分 media, 图集自动打包 ZIP
+    // 公共测试节点已禁用下载端点; 自建节点可用(图集自动打包 ZIP)
+    if (apiBase() === PUBLIC_API) return null;
     return apiUrl("/api/download", { url: shareUrl, prefix: true, with_watermark: false });
   }
   return apiUrl("/api/download", { url: state.rawInput, media });
@@ -214,10 +226,21 @@ async function parse(inputText) {
   setLoading(true);
   try {
     // minimal=true 供 Douyin_TikTok_Download_API 节点返回精简统一结构, 本项目后端会忽略
-    const resp = await fetch(apiUrl("/api/hybrid/video_data", { url: raw, minimal: true }));
+    const endpoint = apiUrl("/api/hybrid/video_data", { url: raw, minimal: true });
+    let resp;
+    try {
+      resp = await fetch(endpoint);
+    } catch (err) {
+      // 公共节点无 CORS, 浏览器直连必然抛 TypeError, 自动改经中继转发
+      if (apiBase() !== PUBLIC_API) throw err;
+      resp = await fetch(CORS_RELAY + encodeURIComponent(endpoint));
+    }
     const body = await resp.json().catch(() => null);
     if (!resp.ok) {
       throw new Error(body?.detail || body?.message || `请求失败 (HTTP ${resp.status})`);
+    }
+    if (body && typeof body.code === "number" && body.code !== 200) {
+      throw new Error(body.message || body.detail || `接口返回错误 (code ${body.code})`);
     }
     const data = normalizeResponse(body);
     if (!data) {
@@ -279,13 +302,28 @@ function renderResult(data) {
 
   if (isImage) {
     hide(els.btnHd);
-    show(els.btnZip);
-    els.btnZip.href = downloadHref("images");
+    const zipHref = downloadHref("images");
+    if (zipHref) {
+      show(els.btnZip);
+      els.btnZip.href = zipHref;
+    } else {
+      hide(els.btnZip); // 公共节点无打包能力, 轮播图上有单图"新标签页打开"
+    }
     els.btnDirect.href = data.images[0];
   } else {
     show(els.btnHd);
     hide(els.btnZip);
-    els.btnHd.href = downloadHref("video");
+    const hdHref = downloadHref("video");
+    if (hdHref) {
+      els.btnHd.href = hdHref;
+      els.btnHd.removeAttribute("target");
+      els.btnHd.rel = "";
+    } else {
+      // 公共节点: 退化为无水印 CDN 直链, noreferrer 防止防盗链 403
+      els.btnHd.href = directUrl || "#";
+      els.btnHd.target = "_blank";
+      els.btnHd.rel = "noreferrer noopener";
+    }
     els.btnDirect.href = directUrl || "#";
     els.btnDirect.setAttribute("aria-disabled", directUrl ? "false" : "true");
   }
@@ -502,8 +540,7 @@ els.pasteBtn.addEventListener("click", async () => {
 // ---------------- 初始化 ----------------
 renderHistory();
 
-// GitHub Pages 等纯静态托管没有同源后端, 引导用户配置自己的 API 地址
-// (兼容本项目后端与自建 Douyin_TikTok_Download_API 节点)
+// GitHub Pages 等纯静态托管默认使用公共测试节点, 开箱即用
 if (!localStorage.getItem(LS_API_BASE_KEY) && /\.github\.io$/i.test(location.hostname)) {
-  toast("演示页需配合后端使用：点击右上角 ⚙ 填写你的 API 地址（支持一键部署，见 README）", "info", 8000);
+  toast("已内置公共解析节点，可直接粘贴链接使用；配置自建后端可解锁代理下载 / ZIP / 音频提取（⚙）", "info", 8000);
 }
