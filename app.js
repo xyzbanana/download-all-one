@@ -13,7 +13,32 @@ const URL_PATTERN = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/i;
 // 默认公共测试节点(Douyin_TikTok_Download_API 作者提供)。该节点未开放 CORS,
 // 浏览器直连会被拦截, 故经公共中继转发; 其下载端点已禁用, 下载一律走 CDN 直链。
 const PUBLIC_API = "https://api.douyin.wtf";
-const CORS_RELAY = "https://api.allorigins.win/raw?url=";
+// 免费公共中继可用性波动大, 依次重试; unwrap=true 表示响应包裹在 {contents} 中
+const CORS_RELAYS = [
+  { wrap: (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u) },
+  { wrap: (u) => "https://api.allorigins.win/get?url=" + encodeURIComponent(u), unwrap: true },
+];
+
+/** 公共节点专用请求: 先直连(未来若开放 CORS 可直达), 失败后逐个尝试中继 */
+async function fetchPublicNode(endpoint) {
+  try {
+    const resp = await fetch(endpoint, { signal: AbortSignal.timeout(15000) });
+    if (resp.ok) return await resp.json();
+  } catch { /* CORS 拦截或超时, 转中继 */ }
+
+  for (const relay of CORS_RELAYS) {
+    try {
+      const resp = await fetch(relay.wrap(endpoint), { signal: AbortSignal.timeout(20000) });
+      if (!resp.ok) continue;
+      const body = await resp.json();
+      return relay.unwrap ? JSON.parse(body.contents) : body;
+    } catch { /* 该中继不可用, 试下一个 */ }
+  }
+  throw new Error(
+    "公共解析节点暂时不可用（免费中继限流或宕机），请稍后重试；" +
+    "或参照 README 一键部署自己的后端，并填入右上角 ⚙ 设置（稳定且功能更全）"
+  );
+}
 
 const state = {
   data: null,      // 最近一次解析结果(已归一化)
@@ -227,17 +252,15 @@ async function parse(inputText) {
   try {
     // minimal=true 供 Douyin_TikTok_Download_API 节点返回精简统一结构, 本项目后端会忽略
     const endpoint = apiUrl("/api/hybrid/video_data", { url: raw, minimal: true });
-    let resp;
-    try {
-      resp = await fetch(endpoint);
-    } catch (err) {
-      // 公共节点无 CORS, 浏览器直连必然抛 TypeError, 自动改经中继转发
-      if (apiBase() !== PUBLIC_API) throw err;
-      resp = await fetch(CORS_RELAY + encodeURIComponent(endpoint));
-    }
-    const body = await resp.json().catch(() => null);
-    if (!resp.ok) {
-      throw new Error(body?.detail || body?.message || `请求失败 (HTTP ${resp.status})`);
+    let body;
+    if (apiBase() === PUBLIC_API) {
+      body = await fetchPublicNode(endpoint);
+    } else {
+      const resp = await fetch(endpoint);
+      body = await resp.json().catch(() => null);
+      if (!resp.ok) {
+        throw new Error(body?.detail || body?.message || `请求失败 (HTTP ${resp.status})`);
+      }
     }
     if (body && typeof body.code === "number" && body.code !== 200) {
       throw new Error(body.message || body.detail || `接口返回错误 (code ${body.code})`);
