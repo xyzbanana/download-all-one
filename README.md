@@ -30,16 +30,17 @@ douyin/
 
 ### 在线体验
 
-前端演示页：**https://jfgatlas.github.io/AeroFetch/** —— **开箱即用，无需任何配置**
+**开箱即用，无需任何配置：**
 
-演示页默认使用开源社区公共测试节点 `api.douyin.wtf` 解析（该节点未开放浏览器跨域，前端自动经公共 CORS 中继转发），下载走解析出的无水印 CDN 直链。
+- 🌐 完整站点（前后端一体）：**https://aerofetch-api.onrender.com**
+- 🌐 GitHub Pages 入口：**https://jfgatlas.github.io/AeroFetch/**（自动调用上面的公共后端）
 
-> 公共节点模式的限制：受节点限流影响、解析请求会经过第三方中继、不支持图集打包 ZIP 与 ffmpeg 音频提取。在右上角 ⚙ 设置中填入自建后端地址即可解锁全部功能。
+> 公共后端部署在 Render 免费档：闲置 15 分钟后休眠，首次访问冷启动约 30~60 秒，之后恢复秒级响应。
 
-前端兼容两种自建后端：
+前端兼容两种自建后端（在右上角 ⚙ 设置中填入即可）：
 
 1. **本项目后端**（推荐，功能最全：代理下载 / 图集 ZIP / ffmpeg 音频提取）
-2. **自建 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 节点**（`minimal` 模式，需开启 CORS 与下载端点）
+2. **自建 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 节点**（`minimal` 模式，需开启 CORS 与下载端点；若填作者公共节点 `api.douyin.wtf`，将自动经公共 CORS 中继访问且仅支持直链下载）
 
 ### 一键部署后端（免费）
 

@@ -10,8 +10,13 @@ const LS_API_BASE_KEY = "aerofetch_api_base";
 const HISTORY_LIMIT = 6;
 const URL_PATTERN = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/i;
 
-// 默认公共测试节点(Douyin_TikTok_Download_API 作者提供)。该节点未开放 CORS,
-// 浏览器直连会被拦截, 故经公共中继转发; 其下载端点已禁用, 下载一律走 CDN 直链。
+// 作者部署的公共后端(本项目完整功能: 代理下载/图集ZIP/ffmpeg音频提取)
+// 静态托管页(GitHub Pages 等)默认使用它, 实现访客零配置开箱即用
+const DEFAULT_REMOTE_API = "https://aerofetch-api.onrender.com";
+
+// Douyin_TikTok_Download_API 作者提供的公共测试节点(手动配置时兼容)。
+// 该节点未开放 CORS, 浏览器直连会被拦截, 故经公共中继转发;
+// 其下载端点已禁用, 下载一律走 CDN 直链。
 const PUBLIC_API = "https://api.douyin.wtf";
 // 免费公共中继可用性波动大, 依次重试; unwrap=true 表示响应包裹在 {contents} 中
 const CORS_RELAYS = [
@@ -96,9 +101,9 @@ const els = {
 function apiBase() {
   const saved = (localStorage.getItem(LS_API_BASE_KEY) || "").replace(/\/+$/, "");
   if (saved) return saved;
-  // 本地/自部署(同源有后端)时请求当前站点; 纯静态托管(GitHub Pages 等)默认公共节点
+  // 本地/自部署(同源有后端)时请求当前站点; 纯静态托管(GitHub Pages 等)默认公共后端
   if (/\.github\.io$/i.test(location.hostname) || location.protocol === "file:") {
-    return PUBLIC_API;
+    return DEFAULT_REMOTE_API;
   }
   return "";
 }
@@ -249,6 +254,12 @@ async function parse(inputText) {
   if (state.loading) return;
 
   setLoading(true);
+  // Render 免费档闲置后会休眠, 冷启动 30~60 秒, 超过 6 秒未返回时安抚用户
+  const coldStartTimer = setTimeout(() => {
+    if (state.loading && apiBase() === DEFAULT_REMOTE_API) {
+      toast("公共后端正在从休眠中唤醒，首次解析约需 30~60 秒，请稍候…", "info", 9000);
+    }
+  }, 6000);
   try {
     // minimal=true 供 Douyin_TikTok_Download_API 节点返回精简统一结构, 本项目后端会忽略
     const endpoint = apiUrl("/api/hybrid/video_data", { url: raw, minimal: true });
@@ -280,6 +291,7 @@ async function parse(inputText) {
     showError(message);
     toast("解析失败", "error");
   } finally {
+    clearTimeout(coldStartTimer);
     setLoading(false);
   }
 }
@@ -562,8 +574,3 @@ els.pasteBtn.addEventListener("click", async () => {
 
 // ---------------- 初始化 ----------------
 renderHistory();
-
-// GitHub Pages 等纯静态托管默认使用公共测试节点, 开箱即用
-if (!localStorage.getItem(LS_API_BASE_KEY) && /\.github\.io$/i.test(location.hostname)) {
-  toast("已内置公共解析节点，可直接粘贴链接使用；配置自建后端可解锁代理下载 / ZIP / 音频提取（⚙）", "info", 8000);
-}
