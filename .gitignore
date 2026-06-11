@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Logs
+server.log
+*.log
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/
