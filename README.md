@@ -28,6 +28,30 @@ douyin/
 
 ## 快速开始
 
+### 在线体验
+
+前端演示页：**https://jfgatlas.github.io/AeroFetch/**（需在右上角 ⚙ 设置中填写你的后端 API 地址）
+
+前端同时兼容两种后端，任选其一填入设置即可：
+
+1. **本项目后端**（推荐，功能最全：代理下载 / 图集 ZIP / ffmpeg 音频提取）
+2. **自建 [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API) 节点**（`minimal` 模式，需开启 CORS 与下载端点）
+
+> 注：作者提供的公共节点 `api.douyin.wtf` 未开放浏览器跨域（CORS）且已禁用下载端点，仅可用于服务端调用，无法作为本前端的接口。
+
+### 一键部署后端（免费）
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/JFGAtlas/AeroFetch)
+
+点击上方按钮，用 GitHub 账号登录 Render 即可免费部署后端（已内置 Dockerfile 与 ffmpeg）。部署完成后会得到一个 `https://xxx.onrender.com` 地址：
+
+- 直接访问该地址 = 前后端一体的完整网站，开箱即用
+- 或在 GitHub Pages 演示页的 ⚙ 设置中填入该地址作为 API 后端
+
+> 免费档约 15 分钟无访问会休眠，下次访问冷启动需 30~60 秒。海外服务器解析抖音偶尔触发风控，配置 `DOUYIN_COOKIE` 环境变量可显著提高成功率。
+
+### 本地运行
+
 ```bash
 # 1. 创建虚拟环境并安装依赖
 python3 -m venv .venv
@@ -39,6 +63,13 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 # 3. 浏览器打开
 open http://127.0.0.1:8000
+```
+
+### Docker 运行
+
+```bash
+docker build -t aerofetch .
+docker run -d -p 8000:8000 aerofetch
 ```
 
 ## API

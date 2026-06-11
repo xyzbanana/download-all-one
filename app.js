@@ -11,8 +11,9 @@ const HISTORY_LIMIT = 6;
 const URL_PATTERN = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/i;
 
 const state = {
-  data: null,      // 最近一次解析结果
+  data: null,      // 最近一次解析结果(已归一化)
   rawInput: "",    // 最近一次解析的原始输入
+  style: "native", // 后端类型: native=本项目后端, wtf=Douyin_TikTok_Download_API 节点
   slide: 0,        // 轮播当前页
   slideCount: 0,
   loading: false,
@@ -128,6 +129,74 @@ function showError(message) {
   hide(els.resultCard);
 }
 
+// ---------------- 后端响应归一化 ----------------
+function firstUrl(obj) {
+  if (obj && Array.isArray(obj.url_list) && obj.url_list.length) return obj.url_list[0];
+  return null;
+}
+
+/**
+ * 兼容两种后端:
+ * 1. 本项目后端: 返回扁平结构 {platform, type, desc, author, video, images, music...}
+ * 2. Douyin_TikTok_Download_API 自建节点 (minimal=true):
+ *    返回 {code, router, data: {video_data, image_data, cover_data, ...}}
+ */
+function normalizeResponse(body) {
+  if (!body || typeof body !== "object") return null;
+
+  // 本项目后端
+  if (body.platform && body.video !== undefined) {
+    state.style = "native";
+    return body;
+  }
+
+  // Douyin_TikTok_Download_API 节点
+  const d = body.data;
+  if (d && typeof d === "object" && d.aweme_id) {
+    state.style = "wtf";
+    const vd = d.video_data || {};
+    const images = d.image_data?.no_watermark_image_list || [];
+    return {
+      platform: d.platform || "douyin",
+      aweme_id: d.aweme_id,
+      type: d.type === "image" || images.length ? "image" : "video",
+      desc: d.desc || "",
+      author: {
+        nickname: d.author?.nickname || "",
+        unique_id: d.author?.unique_id || d.author?.uniqueId || "",
+        avatar: firstUrl(d.author?.avatar_thumb) || d.author?.avatarThumb || "",
+      },
+      statistics: {
+        digg_count: d.statistics?.digg_count ?? d.statistics?.diggCount ?? 0,
+        comment_count: d.statistics?.comment_count ?? d.statistics?.commentCount ?? 0,
+        share_count: d.statistics?.share_count ?? d.statistics?.shareCount ?? 0,
+      },
+      cover: firstUrl(d.cover_data?.cover) || "",
+      video: {
+        nwm_video_url_HQ: vd.nwm_video_url_HQ || null,
+        nwm_video_url: vd.nwm_video_url || null,
+        wm_video_url: vd.wm_video_url || null,
+      },
+      images,
+      music: {
+        title: d.music?.title || "",
+        url: firstUrl(d.music?.play_url) || null,
+      },
+    };
+  }
+  return null;
+}
+
+/** 按后端类型构造下载链接 */
+function downloadHref(media) {
+  const shareUrl = extractUrl(state.rawInput) || state.rawInput;
+  if (state.style === "wtf") {
+    // 该项目的下载端点不区分 media, 图集自动打包 ZIP
+    return apiUrl("/api/download", { url: shareUrl, prefix: true, with_watermark: false });
+  }
+  return apiUrl("/api/download", { url: state.rawInput, media });
+}
+
 // ---------------- 解析主流程 ----------------
 async function parse(inputText) {
   const raw = (inputText ?? els.input.value).trim();
@@ -144,18 +213,23 @@ async function parse(inputText) {
 
   setLoading(true);
   try {
-    const resp = await fetch(apiUrl("/api/hybrid/video_data", { url: raw }));
+    // minimal=true 供 Douyin_TikTok_Download_API 节点返回精简统一结构, 本项目后端会忽略
+    const resp = await fetch(apiUrl("/api/hybrid/video_data", { url: raw, minimal: true }));
     const body = await resp.json().catch(() => null);
     if (!resp.ok) {
-      throw new Error(body?.detail || `请求失败 (HTTP ${resp.status})`);
+      throw new Error(body?.detail || body?.message || `请求失败 (HTTP ${resp.status})`);
     }
-    state.data = body;
+    const data = normalizeResponse(body);
+    if (!data) {
+      throw new Error("后端返回了无法识别的数据格式");
+    }
+    state.data = data;
     state.rawInput = raw;
-    renderResult(body);
-    saveHistory(raw, body);
+    renderResult(data);
+    saveHistory(raw, data);
   } catch (err) {
     const message = err instanceof TypeError
-      ? "无法连接到 API，请检查后端是否启动或在设置中修改 API Base URL"
+      ? "无法连接到 API（后端未启动、地址错误或该节点未开放 CORS 跨域），请在右上角 ⚙ 设置中检查 API Base URL"
       : err.message;
     showError(message);
     toast("解析失败", "error");
@@ -191,8 +265,10 @@ function renderResult(data) {
     show(els.carouselWrap);
   } else {
     hide(els.carouselWrap);
-    // 预览优先走后端代理, 避免 CDN 防盗链导致黑屏
-    els.videoPlayer.src = apiUrl("/api/download", { url: state.rawInput, media: "video" });
+    // 本项目后端: 预览走代理避免防盗链黑屏; 第三方节点: 直连无水印地址(已带 no-referrer)
+    els.videoPlayer.src = state.style === "native"
+      ? apiUrl("/api/download", { url: state.rawInput, media: "video" })
+      : (data.video?.nwm_video_url_HQ || data.video?.nwm_video_url || data.video?.wm_video_url || "");
     els.videoPlayer.poster = data.cover || "";
     show(els.videoWrap);
   }
@@ -204,20 +280,27 @@ function renderResult(data) {
   if (isImage) {
     hide(els.btnHd);
     show(els.btnZip);
-    els.btnZip.href = apiUrl("/api/download", { url: state.rawInput, media: "images" });
+    els.btnZip.href = downloadHref("images");
     els.btnDirect.href = data.images[0];
   } else {
     show(els.btnHd);
     hide(els.btnZip);
-    els.btnHd.href = apiUrl("/api/download", { url: state.rawInput, media: "video" });
+    els.btnHd.href = downloadHref("video");
     els.btnDirect.href = directUrl || "#";
     els.btnDirect.setAttribute("aria-disabled", directUrl ? "false" : "true");
   }
 
-  // 音频提取: 有音乐直链, 或视频作品(后端可用 ffmpeg 从视频流抽取)
-  if (data.music?.url || !isImage) {
+  // 音频提取: 本项目后端支持 ffmpeg 从视频流抽取; 第三方节点只能用音乐直链
+  if (state.style === "native" && (data.music?.url || !isImage)) {
     show(els.btnAudio);
-    els.btnAudio.href = apiUrl("/api/download", { url: state.rawInput, media: "audio" });
+    els.btnAudio.href = downloadHref("audio");
+    els.btnAudio.removeAttribute("target");
+    els.btnAudio.removeAttribute("rel");
+  } else if (data.music?.url) {
+    show(els.btnAudio);
+    els.btnAudio.href = data.music.url;
+    els.btnAudio.target = "_blank";
+    els.btnAudio.rel = "noreferrer noopener";
   } else {
     hide(els.btnAudio);
   }
@@ -420,6 +503,7 @@ els.pasteBtn.addEventListener("click", async () => {
 renderHistory();
 
 // GitHub Pages 等纯静态托管没有同源后端, 引导用户配置自己的 API 地址
+// (兼容本项目后端与自建 Douyin_TikTok_Download_API 节点)
 if (!localStorage.getItem(LS_API_BASE_KEY) && /\.github\.io$/i.test(location.hostname)) {
-  toast("当前为纯前端演示页，解析需自建后端：点击右上角 ⚙ 填写你的 API 地址", "info", 8000);
+  toast("演示页需配合后端使用：点击右上角 ⚙ 填写你的 API 地址（支持一键部署，见 README）", "info", 8000);
 }

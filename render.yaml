@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: aerofetch-api
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: PROXY_URL
+        sync: false
+      - key: DOUYIN_COOKIE
+        sync: false
+      - key: TIKTOK_COOKIE
+        sync: false
