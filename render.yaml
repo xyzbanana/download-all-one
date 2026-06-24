@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aerofetch-api
+    name: savevideo
     runtime: docker
     plan: free
     healthCheckPath: /api/health
