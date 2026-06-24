@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: savevideo
+    name: snapvie
     runtime: docker
     plan: free
     healthCheckPath: /api/health
